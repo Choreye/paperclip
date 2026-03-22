@@ -38,6 +38,7 @@ Core fields:
 Operational fields:
 - timeoutSec (number, optional): run timeout in seconds
 - graceSec (number, optional): SIGTERM grace period in seconds
+- helloProbeTimeoutSec (number, optional): seconds to wait for the environment "Respond with hello." probe (default: 30)
 
 Notes:
 - Runs use positional prompt arguments, not stdin.

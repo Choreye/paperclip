@@ -135,14 +135,16 @@ export async function testEnvironment(
       const model = asString(config.model, DEFAULT_GEMINI_LOCAL_MODEL).trim();
       const approvalMode = asString(config.approvalMode, asBoolean(config.yolo, false) ? "yolo" : "default");
       const sandbox = asBoolean(config.sandbox, false);
-      const helloProbeTimeoutSec = Math.max(1, asNumber(config.helloProbeTimeoutSec, 10));
+      const helloProbeTimeoutSec = Math.max(1, asNumber(config.helloProbeTimeoutSec, 30));
       const extraArgs = (() => {
         const fromExtraArgs = asStringArray(config.extraArgs);
         if (fromExtraArgs.length > 0) return fromExtraArgs;
         return asStringArray(config.args);
       })();
 
-      const args = ["--output-format", "stream-json", "--prompt", "Respond with hello."];
+      // Match execute.ts flag order. Do not use --prompt here: trailing extraArgs would become a
+      // second positional prompt and Gemini CLI rejects "--prompt" plus positional together.
+      const args = ["--output-format", "stream-json"];
       if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
       if (approvalMode !== "default") args.push("--approval-mode", approvalMode);
       if (sandbox) {
@@ -151,6 +153,7 @@ export async function testEnvironment(
         args.push("--sandbox=none");
       }
       if (extraArgs.length > 0) args.push(...extraArgs);
+      args.push("Respond with hello.");
 
       const probe = await runChildProcess(
         `gemini-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -160,7 +163,7 @@ export async function testEnvironment(
           cwd,
           env,
           timeoutSec: helloProbeTimeoutSec,
-          graceSec: 5,
+          graceSec: 30,
           onLog: async () => { },
         },
       );
