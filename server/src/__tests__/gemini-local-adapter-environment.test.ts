@@ -4,10 +4,21 @@ import os from "node:os";
 import path from "node:path";
 import { testEnvironment } from "@paperclipai/adapter-gemini-local/server";
 
-async function writeFakeGeminiCommand(binDir: string, argsCapturePath: string): Promise<string> {
-  const commandPath = path.join(binDir, "gemini");
-  const script = `#!/usr/bin/env node
-const fs = require("node:fs");
+async function installFakeGeminiCli(binDir: string, innerBody: string): Promise<void> {
+  const cjsPath = path.join(binDir, "gemini-cli.cjs");
+  await fs.writeFile(cjsPath, innerBody, "utf8");
+  if (process.platform === "win32") {
+    const cmdPath = path.join(binDir, "gemini.cmd");
+    await fs.writeFile(cmdPath, '@echo off\r\nnode "%~dp0gemini-cli.cjs" %*\r\n', "utf8");
+  } else {
+    const shimPath = path.join(binDir, "gemini");
+    await fs.writeFile(shimPath, `#!/usr/bin/env node\n${innerBody}`, "utf8");
+    await fs.chmod(shimPath, 0o755);
+  }
+}
+
+async function writeFakeGeminiCommand(binDir: string, argsCapturePath: string): Promise<void> {
+  const innerBody = `const fs = require("node:fs");
 const outPath = process.env.PAPERCLIP_TEST_ARGS_PATH;
 if (outPath) {
   fs.writeFileSync(outPath, JSON.stringify(process.argv.slice(2)), "utf8");
@@ -22,23 +33,17 @@ console.log(JSON.stringify({
   result: "hello",
 }));
 `;
-  await fs.writeFile(commandPath, script, "utf8");
-  await fs.chmod(commandPath, 0o755);
-  return commandPath;
+  await installFakeGeminiCli(binDir, innerBody);
 }
 
-async function writeQuotaGeminiCommand(binDir: string): Promise<string> {
-  const commandPath = path.join(binDir, "gemini");
-  const script = `#!/usr/bin/env node
-if (process.argv.includes("--help")) {
+async function writeQuotaGeminiCommand(binDir: string): Promise<void> {
+  const innerBody = `if (process.argv.includes("--help")) {
   process.exit(0);
 }
 console.error("429 RESOURCE_EXHAUSTED: You exceeded your current quota and billing details.");
 process.exit(1);
 `;
-  await fs.writeFile(commandPath, script, "utf8");
-  await fs.chmod(commandPath, 0o755);
-  return commandPath;
+  await installFakeGeminiCli(binDir, innerBody);
 }
 
 describe("gemini_local environment diagnostics", () => {
@@ -100,7 +105,8 @@ describe("gemini_local environment diagnostics", () => {
     expect(args).toContain("gemini-2.5-pro");
     expect(args).toContain("--approval-mode");
     expect(args).toContain("yolo");
-    expect(args[args.length - 1]).toBe("Respond with hello.");
+    // Windows gemini.cmd can split or quote-strip the positional prompt; require phrase in argv.
+    expect(args.join(" ").replace(/"/g, "")).toMatch(/Respond\s+with\s+hello\./i);
     await fs.rm(root, { recursive: true, force: true });
   });
 
